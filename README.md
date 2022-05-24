@@ -1,3 +1,5 @@
+# DO NOT MERGE THIS INTO MAIN UNTIL THE STATE UPDATING HAS BEEN RE-ENABLED IN GITHUB WORKFLOWS
+
 # AIID NLP Lambdas :hugs:
 The goal of this project is to support serverless correlation of input text to similar incidents in the existing [AI Incident Database](https://incidentdatabase.ai/). This project was founded by students at Oregon State University for their 2022 Senior Capstone project.
 
@@ -234,6 +236,9 @@ This creates a new lambda function to perform sentiment analysis *(although you 
 
 ## Cleaning up
 After you are finished experimenting with this project, run ```cdk destroy``` to remove all of the associated infrastructure locally and on the AWS servers. If you do not do this, and especially if you are using the NAT Gateway, you will accrue AWS charges while the Stack is hosted.
+
+## Testing Notes
+This project is automatically tested using Github Actions CI/CD, pytest, AWS CDK, and AWS Sam. Most testing checks that the end-to-end execution of the lambdas match our expected results, but one set of tests (`test_stack_resource_creation()` in `tests/unit/test_aws_lambdas_stack.py`) utilizes a json file `tests/unit/testing_materials/expected_template.json` which specifies some of the primary resources the stack should be requesting/creating in its AWS template when Synth'd in app.py. This will need to be updated if the architecture of the stack is changed, or tests will fail.
 
 ## License
 This library is licensed under the MIT No Attribution License. See the [LICENSE](LICENSE) file.

@@ -2,7 +2,7 @@ name: Deploy to AWS
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dev-main ]
   workflow_dispatch:
 
 jobs:
@@ -15,6 +15,25 @@ jobs:
         with:
           submodules: 'recursive'
           lfs: 'true'
+            
+      - run: pwd
+
+      - name: Install and use tree to list files
+        run: sudo apt-get install tree && tree
+
+      # Source: https://stackoverflow.com/a/62639424
+      - name: Use cached venv
+        id: cache-venv
+        uses: actions/cache@v3
+        with:
+          path: ./.venv/
+          key: ${{ runner.os }}-venv-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-venv-
+      
+      - name: Build venv if not grabbed from cache
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: python -m venv ./.venv
 
       - name: Set Sam Enviroment
         uses: aws-actions/setup-sam@v2  
@@ -26,55 +45,80 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: 'us-west-2'
         
-      - name: Install npm
-        run: sudo apt update -y && sudo apt install nodejs npm -y
-        
+      # Source: https://github.com/actions/setup-node
+      - name: Install node/npm with caching
+        uses: actions/setup-node@v3
+        with:
+          node-version: 14
+          cache: 'npm'
+
+      # Workaround to avoid "Post Run actions/setup-node" failures.
+      # See: https://github.com/actions/setup-node/issues/317
+      - name: Workaround for setup-node no cache error
+        run: mkdir -p /home/runner/.npm
+        continue-on-error: true
+
       - name: Install cdk
-        run: sudo npm install -g aws-cdk
+        run: . ./.venv/bin/activate && sudo npm install -g aws-cdk
       
       - name: Install pip dependencies
-        run: pip install -r requirements.txt
+        run: . ./.venv/bin/activate && pip install -r requirements.txt
     
       - name: Install pytest (add to dependencies later maybe)
-        run: pip install pytest pytest-dotenv
+        run: . ./.venv/bin/activate && pip install pytest pytest-dotenv
       
-      - name: Try to update DB State for this deployment
-        run: python ./state_update.py
-        env:
-          MONGODB_CONNECTION_STRING: ${{ secrets.MONGODB_CONNECTION_STRING }}
+      # - name: Try to update DB State for this deployment
+      #   run: . ./.venv/bin/activate && python ./state_update.py
+      #   env:
+      #     MONGODB_CONNECTION_STRING: ${{ secrets.MONGODB_CONNECTION_STRING }}
 
       - name: cdk bootstrap
-        run: cdk bootstrap
+        run: . ./.venv/bin/activate && cdk bootstrap
         env:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           AWS_REGION: 'us-west-2'
         
       - name: cdk diff
-        run: cdk diff
+        run: . ./.venv/bin/activate && cdk diff
         env:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           AWS_REGION: 'us-west-2'
         
       - name: cdk synth
-        run: cdk synth
+        run: . ./.venv/bin/activate && cdk synth
         env:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           AWS_REGION: 'us-west-2'
 
       - name: Check SAM Version
-        run: sam --version
+        run: . ./.venv/bin/activate && sam --version
           
-      - name: Build Project for SAM Testing
-        run: sam build -t ./cdk.out/AiidNlpLambdaStack.template.json  
+      # # Source: https://stackoverflow.com/a/62639424
+      # # Key cache by template.json outputs from cdk synth and contents of inference
+      # #   (unchanged architecture/lambda definitions should hit)
+      # - name: Use cached SAM build
+      #   id: cache-sam-build
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: |
+      #       ./cdk.out
+      #       ./.aws-sam
+      #     key: ${{ runner.os }}-sam-build-${{ hashFiles('./cdk.out/*template*.json') }}-${{ hashFiles('./app.py') }}-${{ hashFiles('./inference/*.py') }}-${{ hashFiles('./inference/Dockerfile') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-sam-build-
+      
+      - name: Build project for SAM testing
+        # if: steps.cache-sam-build.outputs.cache-hit != 'true'
+        run: . ./.venv/bin/activate && sam build -t ./cdk.out/AiidNlpLambdaStack.template.json --cached
       
       - name: Locally test Lambdas and API
-        run: python -m pytest
+        run: . ./.venv/bin/activate && python -m pytest
         env:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           AWS_REGION: 'us-west-2'      
 
       - name: cdk deploy
-        run: cdk deploy --require-approval never
+        run: . ./.venv/bin/activate && cdk deploy --require-approval never
         env:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           AWS_REGION: 'us-west-2'

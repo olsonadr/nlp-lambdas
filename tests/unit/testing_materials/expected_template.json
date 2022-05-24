@@ -1,0 +1,223 @@
+[{
+        "Type": "AWS::EC2::VPC",
+        "Properties": {
+            "CidrBlock": "10.0.0.0/16",
+            "EnableDnsHostnames": true,
+            "EnableDnsSupport": true,
+            "InstanceTenancy": "default",
+            "Tags": [{
+                "Key": "Name",
+                "Value": "AiidNlpLambdaStack/FargateVPC"
+            }]
+        }
+    },
+    {
+        "Type": "AWS::EC2::Subnet",
+        "Properties": {
+            "CidrBlock": "10.0.0.0/16",
+            "MapPublicIpOnLaunch": true,
+            "Tags": [{
+                    "Key": "aws-cdk:subnet-name",
+                    "Value": "Public"
+                },
+                {
+                    "Key": "aws-cdk:subnet-type",
+                    "Value": "Public"
+                },
+                {
+                    "Key": "Name",
+                    "Value": "AiidNlpLambdaStack/FargateVPC/PublicSubnet1"
+                }
+            ]
+        }
+    },
+    {
+        "Type": "AWS::EC2::RouteTable",
+        "Properties": {
+            "Tags": [{
+                "Key": "Name",
+                "Value": "AiidNlpLambdaStack/FargateVPC/PublicSubnet1"
+            }]
+        }
+    },
+    {
+        "Type": "AWS::EC2::Route",
+        "Properties": {
+            "DestinationCidrBlock": "0.0.0.0/0"
+        }
+    },
+    {
+        "Type": "AWS::EC2::InternetGateway",
+        "Properties": {
+            "Tags": [{
+                "Key": "Name",
+                "Value": "AiidNlpLambdaStack/FargateVPC"
+            }]
+        }
+    },
+    {
+        "Type": "AWS::EFS::FileSystem",
+        "Properties": {
+            "Encrypted": true,
+            "FileSystemTags": [{
+                "Key": "Name",
+                "Value": "AiidNlpLambdaStack/FileSystem"
+            }]
+        }
+    },
+    {
+        "Type": "AWS::EC2::SecurityGroup",
+        "Properties": {
+            "GroupDescription": "AiidNlpLambdaStack/FileSystem/EfsSecurityGroup",
+            "SecurityGroupEgress": [{
+                "CidrIp": "0.0.0.0/0",
+                "Description": "Allow all outbound traffic by default",
+                "IpProtocol": "-1"
+            }],
+            "Tags": [{
+                "Key": "Name",
+                "Value": "AiidNlpLambdaStack/FileSystem"
+            }],
+            "VpcId": {
+                "Ref": "FargateVPC47C6AD35"
+            }
+        }
+    },
+    {
+        "Type": "AWS::EFS::AccessPoint",
+        "Properties": {
+            "PosixUser": {
+                "Gid": "1001",
+                "Uid": "1001"
+            },
+            "RootDirectory": {
+                "CreationInfo": {
+                    "OwnerGid": "1001",
+                    "OwnerUid": "1001",
+                    "Permissions": "750"
+                },
+                "Path": "/export/models"
+            }
+        }
+    },
+    {
+        "Type": "AWS::ApiGatewayV2::Api",
+        "Properties": {
+            "CorsConfiguration": {
+                "AllowCredentials": true,
+                "AllowHeaders": [
+                    "Content-Type",
+                    "X-Amz-Date",
+                    "Authorization",
+                    "X-Api-Key"
+                ],
+                "AllowMethods": [
+                    "GET",
+                    "POST"
+                ],
+                "AllowOrigins": [
+                    "http://localhost:3000",
+                    "http://www.apirequest.io/",
+                    "https://www.apirequest.io/"
+                ]
+            },
+            "Description": "HTTP API Gateway for AIID Lambdas",
+            "Name": "AiidNlpHttpApi",
+            "ProtocolType": "HTTP"
+        }
+    },
+    {
+        "Type": "AWS::ApiGatewayV2::Stage",
+        "Properties": {
+            "StageName": "$default",
+            "AutoDeploy": true
+        }
+    },
+    {
+        "Type": "AWS::ApiGatewayV2::Integration",
+        "Properties": {
+            "IntegrationType": "AWS_PROXY",
+            "PayloadFormatVersion": "2.0"
+        }
+    },
+    {
+        "Type": "AWS::ApiGatewayV2::Route",
+        "Properties": {
+            "RouteKey": "GET /text-to-db-similar",
+            "AuthorizationType": "NONE"
+        }
+    },
+    {
+        "Type": "AWS::ApiGatewayV2::Route",
+        "Properties": {
+            "RouteKey": "POST /text-to-db-similar",
+            "AuthorizationType": "NONE"
+        }
+    },
+    {
+        "Type": "AWS::Lambda::Function",
+        "Properties": {
+            "Environment": {
+                "Variables": {
+                    "TRANSFORMERS_CACHE": "/mnt/hf_models_cache",
+                    "MODEL_DIR": "model",
+                    "MODEL_FILENAME": "pytorch_model.bin",
+                    "INCIDENTS_FILENAME": "incident_cls.pt",
+                    "CSV_FILENAME": "incidents.csv",
+                    "HF_MODEL_URI": "allenai/longformer-base-4096"
+                }
+            },
+            "FileSystemConfigs": [{
+                "LocalMountPath": "/mnt/hf_models_cache"
+            }],
+            "ImageConfig": {
+                "Command": [
+                    "text-to-db-similar.handler"
+                ]
+            },
+            "MemorySize": 8096,
+            "PackageType": "Image",
+            "Timeout": 600
+        }
+    },
+    {
+        "Type": "AWS::ApiGatewayV2::Route",
+        "Properties": {
+            "RouteKey": "GET /embed-to-db-similar",
+            "AuthorizationType": "NONE"
+        }
+    },
+    {
+        "Type": "AWS::ApiGatewayV2::Route",
+        "Properties": {
+            "RouteKey": "POST /embed-to-db-similar",
+            "AuthorizationType": "NONE"
+        }
+    },
+    {
+        "Type": "AWS::Lambda::Function",
+        "Properties": {
+            "Environment": {
+                "Variables": {
+                    "TRANSFORMERS_CACHE": "/mnt/hf_models_cache",
+                    "MODEL_DIR": "model",
+                    "MODEL_FILENAME": "pytorch_model.bin",
+                    "INCIDENTS_FILENAME": "incident_cls.pt",
+                    "CSV_FILENAME": "incidents.csv",
+                    "HF_MODEL_URI": "allenai/longformer-base-4096"
+                }
+            },
+            "FileSystemConfigs": [{
+                "LocalMountPath": "/mnt/hf_models_cache"
+            }],
+            "ImageConfig": {
+                "Command": [
+                    "embed-to-db-similar.handler"
+                ]
+            },
+            "MemorySize": 8096,
+            "PackageType": "Image",
+            "Timeout": 600
+        }
+    }
+]

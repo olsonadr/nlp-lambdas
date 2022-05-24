@@ -8,7 +8,7 @@ import torch
 from transformers import LongformerTokenizer, LongformerModel
 from unidecode import unidecode
 import pandas as pd
-
+from typing import Union
 
 def list_files(startpath):
     res = ""
@@ -20,7 +20,6 @@ def list_files(startpath):
         for f in files:
             res = res + ('{}{}'.format(subindent, f))
     return res
-
 
 # # Get model and tokenizer from EFS or download it to EFS
 # model_path = os.path.join(
@@ -46,9 +45,9 @@ def list_files(startpath):
 #     os.environ["TRANSFORMERS_CACHE"], os.environ["INCIDENTS_FILENAME"])
 # csv_path = os.path.join(
 #     os.environ["TRANSFORMERS_CACHE"], os.environ["CSV_FILENAME"])
-model = LongformerModel.from_pretrained(
+model = LongformerModel.from_pretrained(\
     '/function/model', local_files_only=True)
-tokenizer = LongformerTokenizer.from_pretrained(
+tokenizer = LongformerTokenizer.from_pretrained(\
     '/function/model', local_files_only=True)
 csv_path = '/function/db_state/incidents.csv'
 incidents_path = '/function/db_state/state.csv'
@@ -57,33 +56,65 @@ best_of_def = 3
 # Load in a list of incident states from a CSV
 state = pd.read_csv(incidents_path, converters={"mean": literal_eval})
 
-
-def test(text):
-    inp = tokenizer(text,
-                    padding="longest",
-                    truncation="longest_first",
+# Get longformer embedding
+def get_embedding(text:str):
+    inp = tokenizer(text,\
+                    padding="longest",\
+                    truncation="longest_first",\
                     return_tensors="pt")
-    out = model(**inp)
-    sims = [(torch.nn.functional.cosine_similarity(
-                 out.last_hidden_state[0][0],
-                 torch.tensor(state.loc[i,"mean"]),
-                 dim=-1).item(),
-             state.loc[i,"incident_id"]) for i in range(len(state))]
-    return sims
+    return model(**inp).last_hidden_state[0][0]
 
+# Compute cosine similarity between two tensors
+# Returns a single value of the cosine_sim
+def compute_cosine_sim_e_e(embed_1: Union[torch.Tensor, list], embed_2: Union[torch.Tensor, list]):
+    embed_1 = embed_1 if type(embed_1) == torch.Tensor else torch.tensor(embed_1) 
+    embed_2 = embed_2 if type(embed_2) == torch.Tensor else torch.tensor(embed_2) 
+    return torch.nn.functional.cosine_similarity(embed_1, embed_2, dim=-1)
 
-def inputted(whole_text, best_of=best_of_def):
-    sims = [j for j in sorted(test(whole_text), reverse=True)]
+# Compute cosine similarity between a tensor and all embeddings in a db state DataFrame
+# Returns a list of tuples (cosine_sim, incident_id) for each incident in dataframe
+def compute_cosine_sim_e_df(embed: Union[torch.Tensor, list], dataframe: pd.DataFrame):
+    embed = embed if type(embed) == torch.Tensor else torch.tensor(embed) 
+    return [(\
+                compute_cosine_sim_e_e(embed, torch.tensor(dataframe.loc[i, "mean"])).item(),\
+                dataframe.loc[i, "incident_id"]\
+            ) for i in range(len(state))]
+
+# Process input text for text-to-db-similar computation
+# Returns a list of the most N (best_of) similar incidents with scores and IDs
+def process_input_text(text: str, best_of: int = best_of_def):
+    embed = get_embedding(text)
+    cosine_sims = sorted(compute_cosine_sim_e_df(embed, state), reverse=True)
     if (best_of >= 0):
-        return sims[:best_of]
+        return cosine_sims[:best_of]
     else:
-        return sims
+        return cosine_sims
 
-
-# What to do to correctly formatted input event_text
-def process(event_text, best_of=best_of_def):
-    # return tokenizer(event_text)
-    return inputted(event_text, best_of)
+# Old code that above functions replicate
+# def test(text):
+#     inp = tokenizer(text,
+#                     padding="longest",
+#                     truncation="longest_first",
+#                     return_tensors="pt")
+#     out = model(**inp)
+#     sims = [(torch.nn.functional.cosine_similarity(
+#                  out.last_hidden_state[0][0],
+#                  torch.tensor(state.loc[i,"mean"]),
+#                  dim=-1).item(),
+#              state.loc[i,"incident_id"]) for i in range(len(state))]
+#     return sims
+# 
+# def inputted(whole_text, best_of=best_of_def):
+#     sims = [j for j in sorted(test(whole_text), reverse=True)]
+#     if (best_of >= 0):
+#         return sims[:best_of]
+#     else:
+#         return sims
+#
+# # What to do to correctly formatted input event_text
+# def process(event_text, best_of=best_of_def):
+#     # return tokenizer(event_text)
+#     return inputted(event_text, best_of)
 
 
 # Define lambda handler
@@ -109,7 +140,6 @@ def handler(event, context):
         result['body'] = {'msg': 'Error! Valid input text not provided!'}
         result['headers']['Content-Type'] = "application/json"
         return json.dumps(result)
-        # return result
 
     # Get "best of" value from body or query string (or <0 for full list)
     best_of = best_of_def
@@ -137,7 +167,7 @@ def handler(event, context):
 
     # Found event_text, use it and return result
     try:
-        res = process(event_text, best_of)
+        res = process_input_text(event_text, best_of)
         result['statusCode'] = 200
         result['body']['msg'] = str(res)
         result['headers']['Content-Type'] = "application/json"
@@ -150,7 +180,6 @@ def handler(event, context):
         result['body']['warnings'].append("Error occurred while processing input text!")
         result['headers']['Content-Type'] = "application/json"
     return json.dumps(result)
-    # return result
 
     # # Python 3.10 required for this nicer match formatting (not updated w/ proxy integration)
     # # Get input from body or query string

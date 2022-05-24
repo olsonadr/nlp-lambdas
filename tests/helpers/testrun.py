@@ -10,11 +10,11 @@ from .custom_exceptions \
         SamOutputException 
     )
 
-# inputs are expectIncident number and a .\docs .json file path
+# inputs are expectIncident number and a ./tests/unit/testing_materials/*.json file path
 #   (runs w/o redirecting output and err to files)
-def runTestPipeTest(expectIncident, docsJsonPath):
+def run_lambda_tests(expectIncident, docsJsonPath, lambdaName='text-to-db-similar'):
     # Define command for subprocess
-    cmd = ['sam', 'local', 'invoke', 'similar', '-t', './cdk.out/AiidNlpLambdaStack.template.json', '-e', docsJsonPath]
+    cmd = ['sam', 'local', 'invoke', lambdaName, '-t', './cdk.out/AiidNlpLambdaStack.template.json', '-e', docsJsonPath]
 
     # Spawn subprocess and wait for its complete stdout (depending on DefaultShell argument)
     p = subprocess.Popen(' '.join(cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
@@ -62,7 +62,7 @@ def main():
     args = parser.parse_args()
 
     if args.ExpectIncidentNumber and args.DocsJson:
-        sys.exit(not runTestPipeTest(args.ExpectIncidentNumber, args.DocsJson))
+        sys.exit(not run_text_to_db_similar_tests(args.ExpectIncidentNumber, args.DocsJson))
 
 if __name__ == "__main__":
    main()
